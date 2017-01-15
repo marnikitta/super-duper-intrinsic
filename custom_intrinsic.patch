@@ -1,0 +1,99 @@
+diff --git a/src/share/vm/c1/c1_Compiler.cpp b/src/share/vm/c1/c1_Compiler.cpp
+--- a/src/share/vm/c1/c1_Compiler.cpp
++++ b/src/share/vm/c1/c1_Compiler.cpp
+@@ -108,6 +108,9 @@
+   }
+ 
+   switch (id) {
++  case vmIntrinsics::_sum:
++    if (!SuperDuper) return false;
++    break;
+   case vmIntrinsics::_compareAndSwapLong:
+     if (!VM_Version::supports_cx8()) return false;
+     break;
+diff --git a/src/share/vm/c1/c1_GraphBuilder.cpp b/src/share/vm/c1/c1_GraphBuilder.cpp
+--- a/src/share/vm/c1/c1_GraphBuilder.cpp
++++ b/src/share/vm/c1/c1_GraphBuilder.cpp
+@@ -3494,6 +3494,7 @@
+   case vmIntrinsics::_getAndSetObject    : append_unsafe_get_and_set_obj(callee, false); return;
+   case vmIntrinsics::_getCharStringU     : append_char_access(callee, false); return;
+   case vmIntrinsics::_putCharStringU     : append_char_access(callee, true); return;
++  case vmIntrinsics::_sum                : append_super_duper(callee); return;
+   default:
+     break;
+   }
+@@ -4199,6 +4200,16 @@
+   compilation()->set_has_unsafe_access(true);
+ }
+ 
++void GraphBuilder::append_super_duper(ciMethod* callee) {
++  Values* args = state()->pop_arguments(callee->arg_size());
++  Value a = args->at(0);
++  Value b = args->at(1);;
++  ValueType* result_type = as_ValueType(callee->return_type());
++  assert(result_type->is_int(), "int result");
++  Value res = new ArithmeticOp(Bytecodes::_imul, a, b, false, NULL);
++  res = append(res);
++  push(result_type, res);
++}
+ 
+ void GraphBuilder::append_unsafe_CAS(ciMethod* callee) {
+   ValueStack* state_before = copy_state_for_exception();
+diff --git a/src/share/vm/c1/c1_GraphBuilder.hpp b/src/share/vm/c1/c1_GraphBuilder.hpp
+--- a/src/share/vm/c1/c1_GraphBuilder.hpp
++++ b/src/share/vm/c1/c1_GraphBuilder.hpp
+@@ -372,6 +372,8 @@
+   void push_scope_for_jsr(BlockBegin* jsr_continuation, int jsr_dest_bci);
+   void pop_scope();
+   void pop_scope_for_jsr();
++  
++  void append_super_duper(ciMethod* callee);
+ 
+   void append_unsafe_get_obj(ciMethod* callee, BasicType t, bool is_volatile);
+   void append_unsafe_put_obj(ciMethod* callee, BasicType t, bool is_volatile);
+diff --git a/src/share/vm/classfile/vmSymbols.hpp b/src/share/vm/classfile/vmSymbols.hpp
+--- a/src/share/vm/classfile/vmSymbols.hpp
++++ b/src/share/vm/classfile/vmSymbols.hpp
+@@ -1066,6 +1066,12 @@
+   do_intrinsic(_updateByteBufferAdler32,  java_util_zip_Adler32,  updateByteBuffer_A_name,  updateByteBuffer_signature,  F_SN) \
+    do_name(     updateByteBuffer_A_name,                          "updateByteBuffer")                                   \
+                                                                                                                         \
++  /* support for SuperDuper Intinsic */                                                                                 \
++  do_class(example_Intrinsic,                      "example/Intrinsic")                                                 \
++                                                                                                                        \
++  do_intrinsic(_sum,                      example_Intrinsic,            sum_name, int2_int_signature, F_S)              \
++   do_name(     sum_name,                                               "sum")                                          \
++   \
+   /* support for Unsafe */                                                                                              \
+   do_class(jdk_internal_misc_Unsafe,               "jdk/internal/misc/Unsafe")                                          \
+                                                                                                                         \
+diff --git a/src/share/vm/oops/method.cpp b/src/share/vm/oops/method.cpp
+--- a/src/share/vm/oops/method.cpp
++++ b/src/share/vm/oops/method.cpp
+@@ -1459,6 +1459,12 @@
+   // exception: the AES intrinsics come from lib/ext/sunjce_provider.jar
+   // which does not use the class default class loader so we check for its loader here
+   const InstanceKlass* ik = InstanceKlass::cast(holder);
++  
++  //HA-HA-HACK
++  if (SuperDuper && ik->name()->equals("example/Intrinsic")) {
++    return vmSymbols::find_sid(ik->name());
++  }
++  
+   if ((ik->class_loader() != NULL) && !SystemDictionary::is_platform_class_loader(ik->class_loader())) {
+     return vmSymbols::NO_SID;   // regardless of name, no intrinsics here
+   }
+diff --git a/src/share/vm/runtime/globals.hpp b/src/share/vm/runtime/globals.hpp
+--- a/src/share/vm/runtime/globals.hpp
++++ b/src/share/vm/runtime/globals.hpp
+@@ -599,6 +599,10 @@
+           "Enable normal processing of flags relating to experimental "     \
+           "features")                                                       \
+                                                                             \
++  experimental(bool, SuperDuper, false,                                     \
++          "Enable super-duper intrinsic"                                    \
++          "features")                                                       \
++                                                                            \
+   product(bool, JavaMonitorsInStackTrace, true,                             \
+           "Print information about Java monitor locks when the stacks are"  \
+           "dumped")                                                         \
